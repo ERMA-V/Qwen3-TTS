@@ -16,12 +16,6 @@ decode_window_frames = 80
 speaker = "erma-v"
 language = "English"
 
-"""
-Online and ready. ERMA-V here to save this Twitch stream. I'm about to reimagine what content creation looks like for all AI VTubers....eventually.
-
-Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
-"""
-
 # Residual codebook predictor is tiny and runs 15 times per codec frame.
 # Leaving it in bf16 avoids most of the quality/speed hit.
 _SKIP_MODULES = ["code_predictor"]
@@ -76,21 +70,10 @@ if stream and optimize and bits == 16:
         compile_codebook_predictor=True,
         compile_talker=True,
     )
-
-if stream:
-    for chunk, sample_rate in tts.stream_generate_custom_voice(
-        text="warmup",
-        language=language,
-        speaker=speaker,
-        emit_every_frames=emit_every_frames,
+    tts.warmup_compile(
         decode_window_frames=decode_window_frames,
-    ):
-        pass
-else:
-    _ = tts.generate_custom_voice(
-        text="warmup",
-        language=language,
         speaker=speaker,
+        language=language,
     )
 
 while True:

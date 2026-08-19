@@ -168,6 +168,59 @@ class Qwen3TTSModel:
         )
         return self
 
+    def warmup_compile(
+        self,
+        decode_window_frames: int = 80,
+        speaker: Optional[str] = None,
+        language: str = "English",
+        max_frames: int = 8,
+    ):
+        """
+        Compile streaming graphs before the first user-facing generation.
+
+        `enable_streaming_optimizations()` only wraps modules in torch.compile.
+        This method runs dummy tensors plus two short streaming prefills of
+        different lengths so Dynamo specializes a dynamic talker graph and
+        CUDA-graph capture for the codebook / decoder finishes up front.
+
+        Args:
+            decode_window_frames: Must match streaming decode_window_frames.
+            speaker: Required for custom_voice / finetuned checkpoints.
+            language: Language used for the short real prefills.
+            max_frames: Autoregressive steps for the real prefills (keep small).
+        """
+        print("[Warmup] Building torch.compile graphs...")
+        self.model.warmup_compile(decode_window_frames=decode_window_frames)
+
+        model_type = self.model.tts_model_type
+        texts = ("Hi.", "This is a slightly longer compile warmup.")
+        for text in texts:
+            print(f"[Warmup] Streaming prefill ({len(text)} chars)...")
+            stream_kwargs = dict(
+                text=text,
+                language=language,
+                emit_every_frames=decode_window_frames,
+                decode_window_frames=decode_window_frames,
+                max_frames=max_frames,
+            )
+            if model_type == "custom_voice":
+                if speaker is None:
+                    speakers = list(self.model.supported_speakers)
+                    if not speakers:
+                        raise ValueError("warmup_compile requires speaker= for custom_voice models")
+                    speaker = speakers[0]
+                iterator = self.stream_generate_custom_voice(speaker=speaker, **stream_kwargs)
+            elif model_type == "voice_design":
+                iterator = self.stream_generate_voice_design(instruct="", **stream_kwargs)
+            else:
+                print(f"[Warmup] Skipping real prefill for tts_model_type={model_type}")
+                break
+            for _chunk, _sr in iterator:
+                pass
+
+        print("[Warmup] Compile complete")
+        return self
+
     def _stream_pcm_chunks(
         self,
         input_ids: List[torch.Tensor],

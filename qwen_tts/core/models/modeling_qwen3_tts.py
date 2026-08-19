@@ -1826,11 +1826,14 @@ class Qwen3TTSTalkerForConditionalGeneration(Qwen3TTSTalkerTextPreTrainedModel, 
             Unlike decoder/codebook predictor, talker should use "default" mode
             because "reduce-overhead" mode's internal CUDA graphs conflict with
             the external cudagraph_mark_step_begin() calls in stream_generate_pcm.
+            Sequence length is compiled with dynamic=True so prompt-length
+            changes do not trigger a second recompile.
         """
         self.model.forward = torch.compile(
             self.model.forward,
             mode=mode,
             fullgraph=False,
+            dynamic=True,
         )
 
     @can_return_tuple
@@ -2129,6 +2132,88 @@ class Qwen3TTSForConditionalGeneration(Qwen3TTSPreTrainedModel, GenerationMixin)
             print(f"[CodePredictor] Compiling model with mode={compile_mode}...")
             self.talker.code_predictor.enable_compile(mode=compile_mode)
 
+        return self
+
+    @torch.inference_mode()
+    def warmup_compile(
+        self,
+        decode_window_frames: int = 80,
+        prefill_lengths: tuple[int, ...] = (32, 96),
+        decode_steps: int = 8,
+        codebook_runs: int = 3,
+    ):
+        """
+        Force torch.compile to build graphs before the first user request.
+
+        torch.compile is lazy: wrapping a module does not compile it. This method
+        runs dummy tensors through the compiled decoder, talker backbone, and
+        codebook predictor so the first real generate() is not a compile run.
+
+        The talker is compiled with dynamic sequence length, so two dummy prefills
+        of different lengths specialize a dynamic graph instead of a static one.
+        """
+        if self.speech_tokenizer is None:
+            raise ValueError("Speech tokenizer not loaded. Call from_pretrained() first.")
+
+        device = self.talker.device
+        dtype = self.talker.dtype
+        hidden = self.talker.config.hidden_size
+
+        decoder = getattr(self.speech_tokenizer.model, "decoder", None)
+        num_q = getattr(getattr(decoder, "config", None), "num_quantizers", None)
+        if num_q is None:
+            num_q = getattr(self.speech_tokenizer.model.config, "num_quantizers", 16)
+
+        print(f"[Warmup] Decoder window={decode_window_frames} frames...")
+        dummy_codes = torch.zeros(1, decode_window_frames, num_q, dtype=torch.long, device=device)
+        if hasattr(self.speech_tokenizer, "decode_streaming"):
+            for _ in range(2):
+                torch.compiler.cudagraph_mark_step_begin()
+                self.speech_tokenizer.decode_streaming(
+                    dummy_codes,
+                    use_optimized=True,
+                    pad_to_size=decode_window_frames,
+                )
+
+        print("[Warmup] Talker prefill + decode steps...")
+        past_key_values = None
+        for T in prefill_lengths:
+            torch.compiler.cudagraph_mark_step_begin()
+            embeds = torch.zeros(1, T, hidden, device=device, dtype=dtype)
+            mask = torch.ones(1, T, device=device, dtype=torch.long)
+            out = self.talker.model(
+                input_ids=None,
+                inputs_embeds=embeds,
+                attention_mask=mask,
+                use_cache=True,
+            )
+            past_key_values = out.past_key_values
+
+        step_embed = torch.zeros(1, 1, hidden, device=device, dtype=dtype)
+        for _ in range(decode_steps):
+            torch.compiler.cudagraph_mark_step_begin()
+            out = self.talker.model(
+                input_ids=None,
+                inputs_embeds=step_embed,
+                past_key_values=past_key_values,
+                use_cache=True,
+            )
+            past_key_values = out.past_key_values
+
+        if getattr(self.talker, "_use_fast_codebook_gen", False):
+            print("[Warmup] Codebook predictor...")
+            cb_in = torch.zeros(1, 2, hidden, device=device, dtype=dtype)
+            n_cb = self.talker.config.num_code_groups - 1
+            for _ in range(codebook_runs):
+                torch.compiler.cudagraph_mark_step_begin()
+                self.talker.code_predictor.generate_fast(
+                    cb_in,
+                    num_codebooks=n_cb,
+                    do_sample=False,
+                )
+
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
         return self
 
     @classmethod

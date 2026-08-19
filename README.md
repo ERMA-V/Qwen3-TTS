@@ -25,7 +25,7 @@ use_fast_codebook=True
 compile_codebook_predictor=True
 compile_talker=True
 ```
-- First generation will take full time to generate (**TODO**: Fix this warmup speed. For some reason warmups don't work either)
+- When optimizations are enabled, call warmup_compile to properly warmup the model before sending your first prompt
 
 ---
 
