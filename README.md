@@ -7,8 +7,8 @@ This repo combines [dffdeeq/Qwen3-TTS-streaming](https://github.com/dffdeeq/Qwen
 ```
 # Install dependencies
 sudo apt install sox libsox-fmt-all
-pip install torch==2.9.1 torchaudio==2.9.1 --index-url https://download.pytorch.org/whl/cu130
-pip install https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.6.8/flash_attn-2.8.3%2Bcu130torch2.9-cp312-cp312-linux_x86_64.whl
+pip install torch==2.13.0 torchaudio==2.13.0
+pip install https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.9.47/flash_attn-2.6.3+cu130torch2.13-cp312-cp312-linux_x86_64.whl
 
 # Install this
 pip install -e .
