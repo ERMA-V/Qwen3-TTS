@@ -85,6 +85,37 @@ wavs, sr = tts.generate_custom_voice(
 sf.write("output.wav", wavs[0], sr)
 ```
 
+Finetuned checkpoints are exported as `custom_voice`. Stream PCM chunks with `stream_generate_custom_voice()`:
+
+```python
+import numpy as np
+import torch
+import soundfile as sf
+from qwen_tts import Qwen3TTSModel
+
+tts = Qwen3TTSModel.from_pretrained(
+    "output/checkpoint-epoch-2",
+    device_map="cuda:0",
+    dtype=torch.bfloat16,
+    attn_implementation="flash_attention_2",
+)
+tts.enable_streaming_optimizations(decode_window_frames=80)
+
+chunks = []
+for chunk, sr in tts.stream_generate_custom_voice(
+    text="She said she would be here by noon.",
+    speaker="speaker_test",
+    language="English",
+    emit_every_frames=4,
+    decode_window_frames=80,
+):
+    chunks.append(chunk)
+
+sf.write("output_stream.wav", np.concatenate(chunks), sr)
+```
+
+Interactive streaming test: `python infer.py` (`stream = True` at the top of the file). See also `examples/test_streaming_custom_voice.py`.
+
 ### One-click shell script example
 
 ```bash
