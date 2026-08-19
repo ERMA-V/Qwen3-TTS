@@ -7,7 +7,7 @@ This repo combines [dffdeeq/Qwen3-TTS-streaming](https://github.com/dffdeeq/Qwen
 ```
 # Install dependencies
 sudo apt install sox libsox-fmt-all
-pip install torch==2.13.0 torchaudio==2.11.0
+pip install torch==2.13.0 torchvision==0.28.0 torchaudio==2.11.0
 pip install https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.9.47/flash_attn-2.6.3+cu130torch2.13-cp312-cp312-linux_x86_64.whl
 
 # Install this
