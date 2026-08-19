@@ -1,5 +1,24 @@
 # Qwen3-TTS
 
+This repo combines [dffdeeq/Qwen3-TTS-streaming](https://github.com/dffdeeq/Qwen3-TTS-streaming) with upstream and several open finetuning patches
+
+## Modified install for Limit's repo
+
+```
+# Install dependencies
+sudo apt install sox libsox-fmt-all
+pip install torch==2.9.1 torchaudio==2.9.1 --index-url https://download.pytorch.org/whl/cu130
+pip install https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.6.8/flash_attn-2.8.3%2Bcu130torch2.9-cp312-cp312-linux_x86_64.whl
+
+# Install this
+pip install -e .
+```
+
+Some notes:
+- Fastest time-to-first-byte while maintaining quality: 
+
+---
+
 <br>
 
 <p align="center">
@@ -36,6 +55,7 @@ We release **Qwen3-TTS**, a series of powerful speech generation capabilities de
   - [Launch Local Web UI Demo](#launch-local-web-ui-demo)
   - [DashScope API Usage](#dashscope-api-usage)
 - [vLLM Usage](#vllm-usage)
+- [Streaming Inference](#streaming-inference)
 - [Fine Tuning](#fine-tuning)
 - [Evaluation](#evaluation)
 - [Citation](#citation)
@@ -455,6 +475,47 @@ python end2end.py --query-type VoiceDesign --use-batch-sample
 # Run a single sample with Base task in icl mode-tag
 python end2end.py --query-type Base --mode-tag icl
 ```
+
+## Streaming Inference
+
+This fork adds real PCM streaming and the compile optimizations from [Qwen3-TTS-streaming](https://github.com/dffdeeq/Qwen3-TTS-streaming). Finetuned 12Hz Base checkpoints are exported as `custom_voice`, so use `stream_generate_custom_voice()` rather than voice clone.
+
+```python
+import numpy as np
+import torch
+from qwen_tts import Qwen3TTSModel
+
+tts = Qwen3TTSModel.from_pretrained(
+    "output/checkpoint-epoch-2",
+    device_map="cuda:0",
+    dtype=torch.bfloat16,
+    attn_implementation="flash_attention_2",
+)
+tts.enable_streaming_optimizations(decode_window_frames=80)
+
+for chunk, sr in tts.stream_generate_custom_voice(
+    text="She said she would be here by noon.",
+    speaker="speaker_test",
+    language="English",
+    emit_every_frames=4,
+    decode_window_frames=80,
+):
+    play(chunk, sr)  # your playback callback
+```
+
+| API | Model type |
+|---|---|
+| `stream_generate_custom_voice()` | CustomVoice and finetuned Base checkpoints |
+| `stream_generate_voice_clone()` | Base (3s clone) |
+| `stream_generate_voice_design()` | VoiceDesign |
+| `enable_streaming_optimizations()` | All 12Hz models (`torch.compile` decoder + talker + codebook predictor) |
+
+| Parameter | Default | Description |
+|---|---|---|
+| `emit_every_frames` | 4 | After the first chunk, emit audio every N codec frames (~0.33s at 12Hz) |
+| `decode_window_frames` | 80 | Decoder context window. The first chunk waits until this many frames are buffered |
+
+Examples: `examples/test_streaming_custom_voice.py`, `examples/test_streaming.py`, `examples/test_streaming_optimized.py`.
 
 ## Fine Tuning
 
