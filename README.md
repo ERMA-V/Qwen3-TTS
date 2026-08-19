@@ -15,7 +15,17 @@ pip install -e .
 ```
 
 Some notes:
-- Fastest time-to-first-byte while maintaining quality: 
+- Fastest time-to-first-byte while maintaining quality: `emit_every_frames = 8` and `decode_window_frames = 80` with optimizations enabled with the following config:
+```
+decode_window_frames=decode_window_frames
+use_compile=True
+use_cuda_graphs=False
+compile_mode="reduce-overhead"
+use_fast_codebook=True
+compile_codebook_predictor=True
+compile_talker=True
+```
+- First generation will take full time to generate (**TODO**: Fix this warmup speed. For some reason warmups don't work either)
 
 ---
 
